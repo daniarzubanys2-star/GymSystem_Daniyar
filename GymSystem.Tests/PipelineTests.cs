@@ -59,55 +59,13 @@ public class PipelineTests
         Assert.Equal(36, twelve[0].Discount);    // 12 * 30 = 360, 10% = 36
     }
 
-    // INVALID AND MISSING INPUT
-    [Theory]
-    [InlineData("Gina,abc,Basic,3,0")]     // age is not a number
-    [InlineData("Hank,30,Gold,3,0")]       // unknown tier
-    [InlineData("Kim,30,7,3,0")]           // numeric tier that does not exist
-    [InlineData("Ivan,30,Basic,0,0")]      // months below minimum
-    [InlineData("Jo,30,Basic,3,-1")]       // negative sessions
-    [InlineData("only,three,fields")]      // wrong number of fields
-    [InlineData(",30,Basic,3,0")]          // empty name
-    [InlineData("")]
-    [InlineData("   ")]
-    [InlineData(null)]
-    public void InvalidOrMissingLine_IsRejectedWithMessage(string? line)
-    {
-        bool ok = ClientParser.TryParse(line, out Client? client, out string error);
-
-        Assert.False(ok);
-        Assert.Null(client);
-        Assert.False(string.IsNullOrWhiteSpace(error));
-    }
-
-    [Fact]
-    public void ZeroSessionsIsValid_NotTreatedAsMissing()
-    {
-        bool ok = ClientParser.TryParse("Chen,16,Basic,1,0", out Client? client, out _);
-
-        Assert.True(ok);
-        Assert.NotNull(client);
-        Assert.Equal(0, client.TrainerSessions);
-    }
-
+    // INVALID AND MISSING INPUT (parser and factory tests are in ClientFactoryTests.cs)
     [Fact]
     public void NullInput_IsRejected_NoFabricatedResult()
     {
         Assert.Throws<ArgumentNullException>(() => ClientParser.ParseLines(null!));
         Assert.Throws<ArgumentNullException>(() => QuotePipeline.Run(null!, PricingPolicies.Standard));
         Assert.Throws<ArgumentNullException>(() => QuotePipeline.Run(TestData.Sample(), null!));
-    }
-
-    [Fact]
-    public void ParseLines_SeparatesValidClientsFromErrors()
-    {
-        string[] lines = { "Anna,30,Standard,3,2", "Gina,abc,Basic,3,0", "Hank,30,Gold,3,0" };
-
-        ParsedDataset result = ClientParser.ParseLines(lines, firstLineNumber: 2);
-
-        Assert.Single(result.Clients);
-        Assert.Equal(2, result.Errors.Length);
-        Assert.StartsWith("Line 3:", result.Errors[0]);
     }
 
     // TWO POLICIES

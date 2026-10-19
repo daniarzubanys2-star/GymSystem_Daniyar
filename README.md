@@ -1,75 +1,74 @@
-# Gym Management System – Assignment 5 (Functional Core and Pipeline)
+# Gym Management System – Assignment 7 (Functional Error Handling)
 
-## 1. Workflow (Task 1)
-- **Topic:** calculating membership quotes for a fitness gym.
-- **Users:** gym administrators.
-- **Input (CSV):** `Name,Age,Tier,Months,TrainerSessions` (see `GymSystem/data/clients.csv`).
-- **Rules:**
-  - Age must be 16 or more (age 16 accepted, 15 rejected).
-  - Monthly fee comes from a pricing policy; trainer session costs 20.
-  - `gross = fee * months + sessions * 20`
-  - 12 months or more -> 10% long-term discount (integer division).
-  - Result: quotes sorted by total (highest first, then name) and the total revenue.
-- **Policies for the same rule "monthly fee":**
-  - `Standard`: Basic 30, Standard 50, Premium 80.
-  - `Student`: same, but clients aged 25 or younger get 20% off the fee.
-
-### Documented expected results (written before running)
-| Client | Notes | Standard total | Student total |
-|---|---|---|---|
-| Anna (30, Standard, 3 m, 2 s) | normal | 190 | 190 |
-| Boris (15) | too young -> not eligible | – | – |
-| Chen (16, Basic, 1 m, 0 s) | boundary age, 0 sessions | 30 | 24 |
-| Dana (22, Premium, 12 m, 4 s) | boundary months | 936 | 764 |
-| Erik (45, Basic, 12 m, 1 s) | long-term | 342 | 342 |
-| Fiona (25, Standard, 2 m, 0 s) | boundary for Student | 100 | 80 |
-| Gina `abc` age, Hank tier `Gold` | invalid lines, rejected at parsing | – | – |
-
-Revenue: Standard **1598**, Student **1400**.
-Dana by hand (Standard): fee 80, 80*12 + 4*20 = 1040, discount 104, total 936.
-
-## 2. Types and validation (Task 2)
-- `Models.cs`: immutable records `Client`, `PricedClient`, `Quote`, `QuoteReport`, `ParsedDataset`. The report uses `ImmutableArray`, so nobody can modify it later.
-- `ClientParser.cs`: `TryParse` validates raw text at the boundary (field count, number format, ranges, tier). `0` sessions is valid. Bad lines are reported with line number, never replaced by defaults.
-
-## 3. Pipeline (Task 3) – `QuotePipeline.cs`
-| Stage | Method | Input -> Output | Rule | Example |
-|---|---|---|---|---|
-| 1 | `SelectEligible` | `IEnumerable<Client>` -> `ImmutableArray<Client>` | Age >= 16 | [Boris 15, Chen 16] -> [Chen] |
-| 2 | `PriceClients` | clients + `Func<Client,int>` -> `ImmutableArray<PricedClient>` | gross and discount | Dana: fee 80, gross 1040, discount 104 |
-| 3 | `BuildReport` | `IEnumerable<PricedClient>` -> `QuoteReport` | quotes, sorting, revenue | Dana 936, Erik 342, ... revenue 1598 |
-
-`QuotePipeline.Run` connects them with ordinary function calls.
-
-## 4. Configurable rule (Task 4)
-`PriceClients` is the **higher-order function**; it calls `monthlyFeePolicy(client)` (inside `Price`). `Program.cs` chooses `PricingPolicies.Standard` or `PricingPolicies.Student` and passes it as an argument. Fiona: 100 vs 80 with the same pipeline.
-
-## 5. Purity (Task 5)
-Stages have no Console, file, clock or global state, and never modify their input. Console and file access are only in `Program.cs`.
-
-## 6. Tests (`GymSystem.Tests/PipelineTests.cs`)
-| Required case | Test |
-|---|---|
-| Normal workflow | `NormalWorkflow_StandardPolicy_GivesDocumentedResult` |
-| Empty dataset | `EmptyDataset_GivesEmptyReport` |
-| Boundary | `Boundary_Age16IsEligible_Age15IsNot`, `Boundary_DiscountStartsAtTwelveMonths` |
-| Invalid / missing | `InvalidOrMissingLine_IsRejectedWithMessage` (10 cases), `NullInput_IsRejected_NoFabricatedResult`, `ZeroSessionsIsValid_NotTreatedAsMissing`, `ParseLines_SeparatesValidClientsFromErrors` |
-| Two policies | `TwoPolicies_SameInput_DifferInDocumentedCases`, `HigherOrderFunction_ActuallyCallsThePolicy_OncePerEligibleClient` |
-| Purity and stages | `Stage2_PriceClients_ComputesDocumentedValues`, `Stages_DoNotChangeCallerData_AndGiveSameResultTwice` |
-
-Latest test outcome: _fill in after running `dotnet test` on your machine_.
-
-## 7. How to build, run, test
-- .NET SDK 8.0 or newer (`dotnet --version`). Projects target `net8.0` with `RollForward=LatestMajor`.
-- Working directory: the folder containing `GymSystem.sln`.
+Builds on Assignments 5 and 6 (pipeline, policies, validated `Client`, explicit `MembershipState`). The earlier pipeline and safe transitions are still active. Build, run and test:
 ```
 dotnet build
 dotnet run --project GymSystem
 dotnet test
 ```
-Failure demo: the two invalid lines in `clients.csv` are printed as REJECTED; `dotnet run --project GymSystem -- missing.csv` prints "Data file not found".
+.NET SDK 8.0 or newer, working directory = folder with `GymSystem.sln`.
+
+## 1. Types and what they mean
+| Type | Meaning |
+|---|---|
+| `ClientValidation` (Valid / Invalid) | outcome of **checking raw data**; `Invalid` lists all reasons. `ToResult()` converts it to a Result. |
+| `MembershipState` (Pending / Confirmed) | **workflow state** of a membership |
+| `Result<T,E>` (Success / Failure) | outcome of an **operation** that can fail; replaces the A6 `TransitionOutcome` |
+| `Maybe<T>` (Some / None) | a lookup that may find nothing |
+| `AppError(Kind, Code, Message)` | the error in every Result; `Kind` = Domain or Operational |
+
+`Result` has a private base constructor (only Success/Failure exist) and `Ok`/`Fail` reject a missing (null) payload. A failure has no `Value`, so the value can not be used by mistake.
+
+## 2. Domain failures (Task 1)
+| Situation | Code | Expected success | Error message example |
+|---|---|---|---|
+| Client name not in the list | `client_not_found` | quote for the client | `No client named 'Zed' was found.` |
+| Client younger than 16 | `not_eligible` | Pending membership | `Boris is not eligible: minimum age is 16.` |
+| Payment differs from quote | `payment_mismatch` | Confirmed membership | `Payment 29 does not match the quoted total 30.` |
+| Confirm without / twice | `invalid_state` | Confirmed membership | `Membership is already confirmed.` |
+| Invalid client data (factory) | `invalid_client` | validated `Client` | `Client data is invalid: Name must not be empty. ...` |
+
+Business failures never use exceptions.
+
+## 3. Missing values (Task 2)
+`ClientLookup.FindByName` returns `Maybe<Client>`; `FindTrainerSessions` returns `Maybe<int>`. A client with **0 sessions** gives `Some(0)`; only an unknown client gives `None`. `ToResult(error)` turns `None` into `client_not_found` because the client is required for enrollment. No `null`, no `default(T)`, no `!` is used.
+
+## 4. Map and Bind (Task 3) – `Result.cs`, chain in `Enrollment.cs`
+```
+FindByName            Maybe<Client>
+ .ToResult(NotFound)  Result<Client>
+ .Bind(Start)         Result<MembershipState>    Start can fail (not_eligible)   -> returns a Result
+ .Bind(Confirm)       Result<MembershipState>    Confirm can fail                -> returns a Result
+ .Map(Describe)       Result<string>             Describe can not fail           -> returns a plain value
+```
+`Map` takes `T -> U`, `Bind` takes `T -> Result<U,E>`; that is why their return types differ. Both return the failure unchanged without calling the function. `Program.cs` handles the final result once with `switch` on Success/Failure.
+
+## 5. Exception boundary (Task 4) – `ClientFileLoader.cs`
+`Load(path)` is the only place that catches exceptions (`FileNotFoundException`, `DirectoryNotFoundException`, `IOException`, `UnauthorizedAccessException`). It returns:
+- `file_not_found`, `file_unreadable` (Operational) with the path in the message,
+- `file_malformed` for a wrong/missing header or any invalid line (all bad lines are listed, e.g. `Line 3: ...`).
+It returns the complete list of clients or an error, never a partial list. A file with only the header is a **valid empty dataset**. No fallback is used. Domain data is not touched on failure.
+
+## 6. Demonstrations (`dotnet run --project GymSystem`)
+Normal path, 4 domain failures, present/absent lookup, missing file, malformed file (`data/clients_malformed.csv`). To see a file failure at start-up: `dotnet run --project GymSystem -- missing.csv`.
+
+## 7. Tests
+| Required case | Test(s) |
+|---|---|
+| Complete success | `Enrollment_CompleteChain_ProducesConfirmedText` |
+| Domain failures | `Enrollment_DomainFailures_ReportTheRule` (5 cases), `DomainFailure_UnderMinimumAge_...`, `DomainFailure_ConfirmWithoutMembership_...`, `Boundary_PaymentMustEqualQuotedTotal` |
+| Lookup present/absent | `Lookup_FindsPresentClient_AndReportsAbsentOne`, `Lookup_ZeroIsALegitimateValue_NotAbsence` |
+| Map success | `Map_Success_TransformsValue` |
+| Bind success | `Bind_Success_ReturnsResultOfNextStep` |
+| Failure propagation (counter) | `MapAndBind_OnFailure_KeepTheFailure_AndDoNotCallTheFunctions`, `Chain_StopsAtFirstFailure_...`, `MissingLookup_IsConvertedToResultFailure_...` |
+| Missing file | `MissingFile_ReportsOperationalFailure_AndCreatesNothing`, `MissingPath_IsReportedAsFailure` |
+| Malformed file | `MalformedLines_BecomeFailure_WithoutPartialResult`, `MissingHeader_IsMalformed` |
+| Success / empty file | `ValidFile_LoadsAllClients`, `HeaderOnlyFile_IsAValidEmptyDataset` |
+| Earlier tests | `PipelineTests`, `ClientFactoryTests`, `MembershipWorkflowTests` (A5/A6) |
+
+File tests use a `TempDir` helper (unique temp folder, deleted in `Dispose`). Latest test outcome: Latest test outcome: Passed! - Failed: 0, Passed: 59, Skipped: 0, Total: 59.
 
 ## 8. Team
 | Name | Group | Implemented logic | Tests | Documentation |
 |---|---|---|---|---|
-| Zhubanysh Daniyar | IT-2505 | Models, ClientParser, PricingPolicies, QuotePipeline, Program | PipelineTests (all 6 required test categories) | README.md (workflow, rules, stage table, build instructions) |
+| Zhubanysh Daniyar | IT-2505 | Result, Map, Bind, File processing, Enrollment | ResultTests, ClientFactoryTests, MembershipWorkflowTests, EnrollmentAndLookupTests, FileBoundaryTests | README.md (before/after example, test cases, team section) |

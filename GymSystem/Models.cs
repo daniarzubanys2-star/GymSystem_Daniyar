@@ -4,8 +4,7 @@ namespace GymSystem;
 
 public enum MembershipTier { Basic, Standard, Premium }
 
-// Valid domain data (already parsed and checked). Records are immutable.
-public sealed record Client(string Name, int Age, MembershipTier Tier, int Months, int TrainerSessions);
+// Client is now in Client.cs: it can only be created through a validating factory.
 
 // Output of stage 2: the client together with the calculated money values.
 public sealed record PricedClient(Client Client, int MonthlyFee, int GrossCost, int Discount);

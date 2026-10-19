@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="data\clients.csv" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="data\*.csv" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

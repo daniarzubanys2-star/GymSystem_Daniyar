@@ -1,69 +1,37 @@
 using System.Collections.Immutable;
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
 namespace GymSystem;
 
-// Application boundary: raw text -> valid Client. Nothing here is silently replaced by a default.
+// Application boundary: raw text -> ClientValidation (Valid or Invalid).
+// The text is converted to numbers here; the RULES are checked by Client.Create.
 public static class ClientParser
 {
     // Line format: Name,Age,Tier,Months,TrainerSessions
-    public static bool TryParse(string? line, [NotNullWhen(true)] out Client? client, out string error)
+    public static ClientValidation Parse(string? line)
     {
-        client = null;
-
         if (string.IsNullOrWhiteSpace(line))
-        {
-            error = "Line is missing or empty.";
-            return false;
-        }
+            return Invalid("Line is missing or empty.");
 
         string[] parts = line.Split(',');
         if (parts.Length != 5)
-        {
-            error = $"Expected 5 fields but found {parts.Length}.";
-            return false;
-        }
+            return Invalid($"Expected 5 fields but found {parts.Length}.");
 
-        string name = parts[0].Trim();
-        if (name.Length == 0)
-        {
-            error = "Name must not be empty.";
-            return false;
-        }
+        var reasons = new List<string>();
 
-        if (!int.TryParse(parts[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int age)
-            || age < 1 || age > Rules.MaxAge)
-        {
-            error = $"Age must be a whole number between 1 and {Rules.MaxAge}.";
-            return false;
-        }
+        if (!int.TryParse(parts[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int age))
+            reasons.Add("Age must be a whole number.");
+        if (!Enum.TryParse(parts[2].Trim(), true, out MembershipTier tier))
+            reasons.Add("Tier must be Basic, Standard or Premium.");
+        if (!int.TryParse(parts[3].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int months))
+            reasons.Add("Months must be a whole number.");
+        if (!int.TryParse(parts[4].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int sessions))
+            reasons.Add("TrainerSessions must be a whole number.");
 
-        // Enum.TryParse also accepts "7", so IsDefined is needed as well.
-        if (!Enum.TryParse(parts[2].Trim(), true, out MembershipTier tier) || !Enum.IsDefined(tier))
-        {
-            error = "Tier must be Basic, Standard or Premium.";
-            return false;
-        }
+        if (reasons.Count > 0)
+            return new ClientValidation.Invalid(reasons.ToImmutableArray());
 
-        if (!int.TryParse(parts[3].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int months)
-            || months < 1 || months > Rules.MaxMonths)
-        {
-            error = $"Months must be a whole number between 1 and {Rules.MaxMonths}.";
-            return false;
-        }
-
-        // 0 sessions is a legitimate value, only negative numbers are rejected.
-        if (!int.TryParse(parts[4].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int sessions)
-            || sessions < 0)
-        {
-            error = "TrainerSessions must be a whole number, 0 or more.";
-            return false;
-        }
-
-        client = new Client(name, age, tier, months, sessions);
-        error = "";
-        return true;
+        return Client.Create(parts[0], age, tier, months, sessions);   // the factory checks the rules
     }
 
     public static ParsedDataset ParseLines(IEnumerable<string?> lines, int firstLineNumber = 1)
@@ -76,13 +44,24 @@ public static class ClientParser
 
         foreach (string? line in lines)
         {
-            if (TryParse(line, out Client? client, out string error))
-                clients.Add(client);
-            else
-                errors.Add($"Line {lineNumber}: {error}");
+            switch (Parse(line))
+            {
+                case ClientValidation.Valid valid:
+                    clients.Add(valid.Client);
+                    break;
+                case ClientValidation.Invalid invalid:
+                    errors.Add($"Line {lineNumber}: {string.Join(" ", invalid.Reasons)}");
+                    break;
+                default:
+                    errors.Add($"Line {lineNumber}: unknown validation result.");
+                    break;
+            }
             lineNumber++;
         }
 
         return new ParsedDataset(clients.ToImmutable(), errors.ToImmutable());
     }
+
+    private static ClientValidation Invalid(string reason)
+        => new ClientValidation.Invalid(ImmutableArray.Create(reason));
 }
