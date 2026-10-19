@@ -9,9 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="data\*.csv" CopyToOutputDirectory="PreserveNewest" />
-    <!-- native library built by native/build.sh or build.bat; copied next to GymSystem.dll (empty glob = nothing copied) -->
-    <None Include="..\native\out\*" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="data\clients.csv" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

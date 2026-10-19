@@ -1,41 +1,54 @@
-using MembershipResult = GymSystem.Result<GymSystem.MembershipState, GymSystem.AppError>;
-
 namespace GymSystem;
 
-// Safe sequence: Client.Create -> Start -> Confirm. Pure methods, immutable states.
-// Expected failures are returned as Result failures, no exceptions are used for business rules.
+// Safe sequence: Client.Create -> Start -> Confirm.
+// Every step needs the result of the previous one as an explicit argument,
+// so the order can not be forgotten. All methods are pure: they return a new state
+// and never change the old one.
 public static class MembershipWorkflow
 {
-    // Needs an already validated Client (the factory result). Fails with not_eligible for age < 16.
-    public static MembershipResult Start(Client client, Func<Client, int> monthlyFeePolicy)
+    // Needs a ClientValidation (the result of the factory) and the pricing policy.
+    public static TransitionOutcome Start(ClientValidation validation, Func<Client, int> monthlyFeePolicy)
     {
-        ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(monthlyFeePolicy);
 
-        QuoteReport report = QuotePipeline.Run(new[] { client }, monthlyFeePolicy);
-
-        if (report.Quotes.IsEmpty)
-            return MembershipResult.Fail(AppError.NotEligible(client.Name));
-
-        return MembershipResult.Ok(new MembershipState.Pending(report.Quotes[0]));
+        return validation switch
+        {
+            ClientValidation.Valid valid => StartForValidClient(valid.Client, monthlyFeePolicy),
+            ClientValidation.Invalid invalid => new TransitionOutcome.Rejected(
+                "Client is invalid: " + string.Join(" ", invalid.Reasons)),
+            _ => new TransitionOutcome.Rejected("Missing or unknown validation result.")
+        };
     }
 
-    // Only a Pending membership can be confirmed and the payment must be exact.
-    // Repeated confirmation: rejected with invalid_state, the Confirmed state stays unchanged.
-    public static MembershipResult Confirm(MembershipState? state, int payment)
+    private static TransitionOutcome StartForValidClient(Client client, Func<Client, int> policy)
+    {
+        // Reuses the pipeline from Assignment 5. A client under the minimum age gives no quote.
+        QuoteReport report = QuotePipeline.Run(new[] { client }, policy);
+
+        if (report.Quotes.IsEmpty)
+            return new TransitionOutcome.Rejected(
+                $"{client.Name} is not eligible: minimum age is {Rules.MinimumAge}.");
+
+        return new TransitionOutcome.Moved(new MembershipState.Pending(report.Quotes[0]));
+    }
+
+    // Needs a state. Only a Pending membership can be confirmed, and the payment must be exact.
+    // Repeated confirmation rule: it is REJECTED and the existing Confirmed state stays unchanged.
+    public static TransitionOutcome Confirm(MembershipState? state, int payment)
     {
         return state switch
         {
             MembershipState.Pending pending when payment == pending.Quote.TotalCost
-                => MembershipResult.Ok(new MembershipState.Confirmed(pending.Quote, payment)),
+                => new TransitionOutcome.Moved(new MembershipState.Confirmed(pending.Quote, payment)),
 
             MembershipState.Pending pending
-                => MembershipResult.Fail(AppError.PaymentMismatch(payment, pending.Quote.TotalCost)),
+                => new TransitionOutcome.Rejected(
+                    $"Payment {payment} does not match the quoted total {pending.Quote.TotalCost}."),
 
             MembershipState.Confirmed
-                => MembershipResult.Fail(AppError.InvalidState("Membership is already confirmed.")),
+                => new TransitionOutcome.Rejected("Membership is already confirmed."),
 
-            _ => MembershipResult.Fail(AppError.InvalidState("There is no membership to confirm."))
+            _ => new TransitionOutcome.Rejected("There is no membership to confirm.")
         };
     }
 

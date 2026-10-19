@@ -22,3 +22,14 @@ public abstract record MembershipState
         internal Confirmed(Quote quote, int paidAmount) { Quote = quote; PaidAmount = paidAmount; }
     }
 }
+
+// Outcome of a transition: either a new state or a rejection with a reason.
+// (In Assignment 7 this will be replaced by a general Result type.)
+public abstract record TransitionOutcome
+{
+    private TransitionOutcome() { }
+
+    public sealed record Moved(MembershipState NewState) : TransitionOutcome;
+
+    public sealed record Rejected(string Reason) : TransitionOutcome;
+}
