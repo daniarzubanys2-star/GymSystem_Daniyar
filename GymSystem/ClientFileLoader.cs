@@ -20,7 +20,9 @@ public static class ClientFileLoader
         string[] lines;
         try
         {
-            lines = File.ReadAllLines(path);
+            // The iterator is lazy: the file is opened and read inside ToArray(), i.e. INSIDE this try block.
+            // The reader is disposed when ToArray() finishes or fails. We keep only the snapshot array.
+            lines = ClientFileReader.ReadLines(path).ToArray();
         }
         catch (FileNotFoundException)
         {

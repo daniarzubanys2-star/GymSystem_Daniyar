@@ -23,6 +23,9 @@ public sealed record AppError(ErrorKind Kind, string Code, string Message)
     public static AppError InvalidState(string message)
         => new(ErrorKind.Domain, "invalid_state", message);
 
+    public static AppError InvalidInput(string details)
+        => new(ErrorKind.Domain, "invalid_input", details);
+
     // --- operational failures ---
     public static AppError FileNotFound(string path)
         => new(ErrorKind.Operational, "file_not_found", $"Data file not found: {path}");
@@ -32,4 +35,13 @@ public sealed record AppError(ErrorKind Kind, string Code, string Message)
 
     public static AppError FileMalformed(string path, string details)
         => new(ErrorKind.Operational, "file_malformed", $"Malformed content in {path}: {details}");
+
+    public static AppError NativeUnavailable(string details)
+        => new(ErrorKind.Operational, "native_unavailable", $"Native library call failed: {details}");
+
+    public static AppError NativeRejected(int months, int sessions)
+        => new(ErrorKind.Domain, "native_rejected", $"Native function rejected months={months}, sessions={sessions}.");
+
+    public static AppError ExportFailed(string path, string details)
+        => new(ErrorKind.Operational, "export_failed", $"Cannot write {path}: {details}");
 }

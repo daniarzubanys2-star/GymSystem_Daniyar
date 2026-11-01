@@ -7,6 +7,7 @@ public static class Rules
     public const int MinimumAge = 16;            // clients younger than this are not eligible
     public const int MaxAge = 120;
     public const int MaxMonths = 36;
+    public const int MaxTrainerSessions = 1000;  // same limit as the native C function
 
     public const int TrainerSessionPrice = 20;   // price of one personal-trainer session
 

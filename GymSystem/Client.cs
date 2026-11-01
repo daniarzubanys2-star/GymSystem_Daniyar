@@ -38,8 +38,8 @@ public sealed record Client
             reasons.Add("Tier must be Basic, Standard or Premium.");
         if (months < 1 || months > Rules.MaxMonths)
             reasons.Add($"Months must be between 1 and {Rules.MaxMonths}.");
-        if (trainerSessions < 0)
-            reasons.Add("TrainerSessions must be 0 or more.");
+        if (trainerSessions < 0 || trainerSessions > Rules.MaxTrainerSessions)
+            reasons.Add($"TrainerSessions must be between 0 and {Rules.MaxTrainerSessions}.");
 
         if (reasons.Count > 0)
             return new ClientValidation.Invalid(reasons.ToImmutableArray());

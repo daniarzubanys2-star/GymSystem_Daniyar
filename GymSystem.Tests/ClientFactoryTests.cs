@@ -29,6 +29,7 @@ public class ClientFactoryTests
     [InlineData("Anna", 30, 1, 0, 0, "Months")]
     [InlineData("Anna", 30, 1, 37, 0, "Months")]
     [InlineData("Anna", 30, 1, 3, -1, "TrainerSessions")]
+    [InlineData("Anna", 30, 1, 3, 1001, "TrainerSessions")]
     public void Factory_InvalidInput_IsRejectedWithReason(
         string name, int age, int tier, int months, int sessions, string expectedReason)
     {
